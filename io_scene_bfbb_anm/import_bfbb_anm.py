@@ -14,6 +14,10 @@ def invalid_active_object(self, context):
     self.layout.label(text='You need to select the armature to import animation')
 
 
+def bones_number_mismatch(self, context):
+    self.layout.label(text='Bones number mismatch')
+
+
 def set_keyframe(curves, frame, values):
     for i, c in enumerate(curves):
         c.keyframe_points.add(1)
@@ -42,8 +46,12 @@ def create_action(arm_obj, anm, fps):
 
     set_kfs = []
 
+    arm_bones_num, anm_bones_num = len(arm_obj.pose.bones), len(anm.offsets[0])
+    if arm_bones_num > anm_bones_num:
+        arm_bones_num = anm_bones_num
+
     for off in anm.offsets:
-        for bone_id, bone in enumerate(arm_obj.pose.bones):
+        for bone_id, bone in enumerate(arm_obj.pose.bones[:arm_bones_num]):
             kf_id = off[bone_id]
 
             if kf_id in set_kfs:
@@ -74,6 +82,9 @@ def load(context, filepath, *, fps):
         context.window_manager.popup_menu(invalid_file_format, title='Error', icon='ERROR')
         return {'CANCELLED'}
 
+    arm_bones_num, anm_bones_num = len(arm_obj.pose.bones), len(anm.offsets[0])
+    if arm_bones_num != anm_bones_num:
+        context.window_manager.popup_menu(bones_number_mismatch, title='Error', icon='ERROR')
 
     animation_data = arm_obj.animation_data
     if not animation_data:
