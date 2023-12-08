@@ -70,7 +70,7 @@ def create_action(arm_obj, anm, fps):
 
     return act
 
-def load(context, filepath, *, fps):
+def load(context, filepath, fps):
     arm_obj = context.view_layer.objects.active
     if not arm_obj or type(arm_obj.data) != bpy.types.Armature:
         context.window_manager.popup_menu(invalid_active_object, title='Error', icon='ERROR')

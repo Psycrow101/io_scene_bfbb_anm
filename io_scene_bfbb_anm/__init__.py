@@ -1,5 +1,6 @@
 import bpy
 from bpy.props import (
+        CollectionProperty,
         EnumProperty,
         FloatProperty,
         IntProperty,
@@ -9,6 +10,7 @@ from bpy_extras.io_utils import (
         ImportHelper,
         ExportHelper,
         )
+from pathlib import Path
 
 bl_info = {
     "name": "Battle for Bikini Bottom Animation",
@@ -45,13 +47,17 @@ class ImportBFBBAnm(bpy.types.Operator, ImportHelper):
         default=30.0,
     )
 
+    files: CollectionProperty(type=bpy.types.PropertyGroup)
+
     def execute(self, context):
         from . import import_bfbb_anm
 
-        keywords = self.as_keywords(ignore=("filter_glob",
-                                            ))
-
-        return import_bfbb_anm.load(context, **keywords)
+        files_dir = Path(self.filepath)
+        for selection in self.files:
+            file_path = Path(files_dir.parent, selection.name)
+            if file_path.suffix.lower() == self.filename_ext:
+                import_bfbb_anm.load(context, file_path, self.fps)
+        return {'FINISHED'}
 
 
 class ExportBFBBAnm(bpy.types.Operator, ExportHelper):
