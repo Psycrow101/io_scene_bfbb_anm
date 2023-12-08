@@ -15,7 +15,7 @@ from pathlib import Path
 bl_info = {
     "name": "Battle for Bikini Bottom Animation",
     "author": "Psycrow",
-    "version": (0, 0, 2),
+    "version": (0, 1, 0),
     "blender": (2, 81, 0),
     "location": "File > Import-Export",
     "description": "Import / Export BFBB Animation (.anm)",
