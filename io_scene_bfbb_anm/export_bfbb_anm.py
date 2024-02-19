@@ -36,7 +36,7 @@ def get_action_range(arm_obj, act):
                 frame_start = min(frame_start, time)
                 frame_end = max(frame_end, time)
 
-    return int(frame_start), int(frame_end)
+    return int(frame_start), round(frame_end)
 
 
 def create_anm(context, arm_obj, act, fps, flags):
@@ -75,8 +75,6 @@ def create_anm(context, arm_obj, act, fps, flags):
                 keyframes.append(AnmKeyframe(time_id, loc, rot))
             last_locrot = (loc, rot)
             offsets[time_id].append(len(keyframes) - 1)
-
-        keyframes.append(AnmKeyframe(len(trans), trans[0][0], trans[0][1]))
 
     context.scene.frame_set(old_frame)
     context.view_layer.update()

@@ -102,7 +102,7 @@ def load(context, filepath, fps):
             max_frame = max(max_frame, kfp.co[0])
 
     context.scene.frame_start = 0
-    context.scene.frame_end = int(max_frame)
+    context.scene.frame_end = round(max_frame)
 
     bpy.ops.object.mode_set(mode='OBJECT')
 
