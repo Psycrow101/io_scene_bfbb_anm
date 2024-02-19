@@ -1,4 +1,6 @@
 import bpy
+from dataclasses import dataclass
+from mathutils import Quaternion, Vector
 from . anm import Anm, AnmKeyframe
 
 
@@ -10,11 +12,24 @@ def missing_action(self, context):
     self.layout.label(text='No action for active armature. Nothing to export')
 
 
-def get_bone_locrot(bone):
-    mat = bone.matrix.copy()
-    if bone.parent:
-        mat = bone.parent.matrix.inverted_safe() @ mat
-    return mat.to_translation(), mat.to_quaternion()
+@dataclass
+class PoseBoneTransform:
+    pos: Vector
+    rot: Quaternion
+
+    def calc_kf(self, mat):
+        kf_pos = self.pos + mat.to_translation()
+        kf_rot = mat.inverted_safe().to_quaternion().rotation_difference(self.rot)
+        return kf_pos, kf_rot
+
+
+def get_bone_transform(pose_bone):
+    pos = pose_bone.location.copy()
+    if pose_bone.rotation_mode == 'QUATERNION':
+        rot = pose_bone.rotation_quaternion.copy()
+    else:
+        rot = pose_bone.rotation_euler.to_quaternion()
+    return PoseBoneTransform(pos, rot)
 
 
 def get_action_range(arm_obj, act):
@@ -44,7 +59,7 @@ def create_anm(context, arm_obj, act, fps, flags):
 
     old_frame = context.scene.frame_current
     frame_start, frame_end = get_action_range(arm_obj, act)
-    bone_locrots = {}
+    bone_transforms = {}
 
     if frame_start is None:
         return None
@@ -56,24 +71,30 @@ def create_anm(context, arm_obj, act, fps, flags):
         context.scene.frame_set(frame)
         context.view_layer.update()
 
-        for bone_id, bone in enumerate(arm_obj.pose.bones):
-            loc, rot = get_bone_locrot(bone)
+        for bone_id, pose_bone in enumerate(arm_obj.pose.bones):
             if frame == frame_start:
-                bone_locrots[bone_id] = [(loc, rot)]
+                bone_transforms[bone_id] = [get_bone_transform(pose_bone)]
             else:
-                bone_locrots[bone_id].append((loc, rot))
+                bone_transforms[bone_id].append(get_bone_transform(pose_bone))
 
         offsets.append([])
         times.append((frame - frame_start) / fps)
 
     times.append((frame_end - frame_start + 1) / fps)
 
-    for bone_id, trans in sorted(bone_locrots.items()):
-        last_locrot = None
-        for time_id, (loc, rot) in enumerate(trans):
-            if last_locrot is None or loc != last_locrot[0] or rot != last_locrot[1]:
-                keyframes.append(AnmKeyframe(time_id, loc, rot))
-            last_locrot = (loc, rot)
+    for bone_id, transforms in sorted(bone_transforms.items()):
+        bone = arm_obj.data.bones[bone_id]
+
+        loc_mat = bone.matrix_local.copy()
+        if bone.parent:
+            loc_mat = bone.parent.matrix_local.inverted_safe() @ loc_mat
+
+        last_trans = None
+        for time_id, trans in enumerate(transforms):
+            if last_trans is None or trans != last_trans:
+                kf_pos, kf_rot = trans.calc_kf(loc_mat)
+                keyframes.append(AnmKeyframe(time_id, kf_pos, kf_rot))
+            last_trans = trans
             offsets[time_id].append(len(keyframes) - 1)
 
     context.scene.frame_set(old_frame)
