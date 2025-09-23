@@ -11,7 +11,7 @@ This plugin for Blender 3D allows you to import and export animations (`.anm`) f
 ## Requirements
 
 * Blender 3D (2.81 and higher)
-* [DragonFF](https://github.com/Parik27/DragonFF) or [DragonFF multi-mesh support](https://github.com/Psycrow101/DragonFF/tree/multi-mesh)
+* [DragonFF](https://github.com/Parik27/DragonFF)
 
 ## See also
 [Import and export RenderWare animations (.anm) into Blender 3D](https://github.com/Psycrow101/Blender-3D-RW-Anm-plugin)
