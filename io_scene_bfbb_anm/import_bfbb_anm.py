@@ -25,34 +25,36 @@ def set_keyframe(curves, frame, values):
         c.keyframe_points[-1].interpolation = 'LINEAR'
 
 
+def translation_matrix(v):
+    return Matrix.Translation(v)
+
+
+def local_to_basis_matrix(local_matrix, global_matrix, parent_matrix):
+    return global_matrix.inverted() @ (parent_matrix @ local_matrix)
+
+
 def create_action(arm_obj, anm, fps):
     act = bpy.data.actions.new('action')
     curves_loc, curves_rot = [], []
-    loc_mats, prev_rots = {}, {}
+    prev_rots = {}
 
-    for pose_bone in arm_obj.pose.bones:
-        g = act.groups.new(name=pose_bone.name)
-        cl = [act.fcurves.new(data_path=(POSEDATA_PREFIX % pose_bone.name) + 'location', index=i) for i in range(3)]
-        cr = [act.fcurves.new(data_path=(POSEDATA_PREFIX % pose_bone.name) + 'rotation_quaternion', index=i) for i in range(4)]
+    for bone in arm_obj.data.bones:
+        g = act.groups.new(name=bone.name)
+        cl = [act.fcurves.new(data_path=(POSEDATA_PREFIX % bone.name) + 'location', index=i) for i in range(3)]
+        cr = [act.fcurves.new(data_path=(POSEDATA_PREFIX % bone.name) + 'rotation_quaternion', index=i) for i in range(4)]
 
-        for c in cl:
-            c.group = g
-
-        for c in cr:
+        for c in cl + cr:
             c.group = g
 
         curves_loc.append(cl)
         curves_rot.append(cr)
+
+        pose_bone = arm_obj.pose.bones[bone.name]
         pose_bone.rotation_mode = 'QUATERNION'
         pose_bone.location = (0, 0, 0)
         pose_bone.rotation_quaternion = (1, 0, 0, 0)
 
-        bone = arm_obj.data.bones.get(pose_bone.name)
-        loc_mat = bone.matrix_local.copy()
-        if bone.parent:
-            loc_mat = bone.parent.matrix_local.inverted_safe() @ loc_mat
-        loc_mats[pose_bone] = loc_mat
-        prev_rots[pose_bone] = None
+        prev_rots[bone] = None
 
     set_kfs = []
 
@@ -61,7 +63,7 @@ def create_action(arm_obj, anm, fps):
         arm_bones_num = anm_bones_num
 
     for off in anm.offsets:
-        for bone_id, pose_bone in enumerate(arm_obj.pose.bones[:arm_bones_num]):
+        for bone_id, bone in enumerate(arm_obj.data.bones[:arm_bones_num]):
             kf_id = off[bone_id]
 
             if kf_id in set_kfs:
@@ -71,21 +73,30 @@ def create_action(arm_obj, anm, fps):
             kf = anm.keyframes[kf_id]
             time = anm.times[kf.time_id]
 
-            loc_mat = loc_mats[pose_bone]
-            loc_pos = loc_mat.to_translation()
-            loc_rot = loc_mat.to_quaternion()
+            rest_mat = bone.matrix_local
+            if bone.parent:
+                parent_mat = bone.parent.matrix_local
+                local_rot = (parent_mat.inverted_safe() @ rest_mat).to_quaternion()
+            else:
+                parent_mat = Matrix.Identity(4)
+                local_rot = rest_mat.to_quaternion()
 
-            rot = loc_rot.rotation_difference(kf.rot)
+            mat = translation_matrix(kf.loc)
+            mat_basis = local_to_basis_matrix(mat, rest_mat, parent_mat)
+            loc = mat_basis.to_translation()
 
-            prev_rot = prev_rots[pose_bone]
+            rot = local_rot.rotation_difference(kf.rot)
+
+            # Correction opposite direction of rotation
+            prev_rot = prev_rots[bone]
             if prev_rot:
                 alt_rot = rot.copy()
                 alt_rot.negate()
                 if rot.rotation_difference(prev_rot).angle > alt_rot.rotation_difference(prev_rot).angle:
                     rot = alt_rot
-            prev_rots[pose_bone] = rot
+            prev_rots[bone] = rot
 
-            set_keyframe(curves_loc[bone_id], time * fps, kf.loc - loc_pos)
+            set_keyframe(curves_loc[bone_id], time * fps, loc)
             set_keyframe(curves_rot[bone_id], time * fps, rot)
 
     return act

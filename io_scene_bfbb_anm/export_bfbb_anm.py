@@ -1,6 +1,6 @@
 import bpy
-from dataclasses import dataclass
-from mathutils import Quaternion, Vector
+from collections import defaultdict
+from mathutils import Matrix
 from . anm import Anm, AnmKeyframe
 
 
@@ -12,24 +12,15 @@ def missing_action(self, context):
     self.layout.label(text='No action for active armature. Nothing to export')
 
 
-@dataclass
-class PoseBoneTransform:
-    pos: Vector
-    rot: Quaternion
-
-    def calc_kf(self, mat):
-        kf_pos = self.pos + mat.to_translation()
-        kf_rot = mat.inverted_safe().to_quaternion().rotation_difference(self.rot)
-        return kf_pos, kf_rot
+def basis_to_local_matrix(basis_matrix, global_matrix, parent_matrix):
+    return parent_matrix.inverted() @ global_matrix @ basis_matrix
 
 
-def get_bone_transform(pose_bone):
-    pos = pose_bone.location.copy()
-    if pose_bone.rotation_mode == 'QUATERNION':
-        rot = pose_bone.rotation_quaternion.copy()
-    else:
-        rot = pose_bone.rotation_euler.to_quaternion()
-    return PoseBoneTransform(pos, rot)
+def is_matrix_interpolated(prev_mat, curr_mat, next_mat):
+    mat = prev_mat.lerp(next_mat, 0.5)
+    loc_diff = (mat.to_translation() - curr_mat.to_translation()).length
+    rot_diff = mat.to_quaternion().rotation_difference(curr_mat.to_quaternion()).angle
+    return loc_diff + rot_diff < 0.000001
 
 
 def get_action_range(arm_obj, act):
@@ -59,7 +50,7 @@ def create_anm(context, arm_obj, act, fps, flags):
 
     old_frame = context.scene.frame_current
     frame_start, frame_end = get_action_range(arm_obj, act)
-    bone_transforms = {}
+    bone_basis_matrices = defaultdict(list)
 
     if frame_start is None:
         return None
@@ -72,29 +63,39 @@ def create_anm(context, arm_obj, act, fps, flags):
         context.view_layer.update()
 
         for bone_id, pose_bone in enumerate(arm_obj.pose.bones):
-            if frame == frame_start:
-                bone_transforms[bone_id] = [get_bone_transform(pose_bone)]
-            else:
-                bone_transforms[bone_id].append(get_bone_transform(pose_bone))
+            bone_basis_matrices[bone_id].append(pose_bone.matrix_basis.copy())
 
         offsets.append([])
         times.append((frame - frame_start) / fps)
 
     times.append((frame_end - frame_start + 1) / fps)
 
-    for bone_id, transforms in sorted(bone_transforms.items()):
+    for bone_id, basis_matrices in sorted(bone_basis_matrices.items()):
         bone = arm_obj.data.bones[bone_id]
 
-        loc_mat = bone.matrix_local.copy()
+        rest_mat = bone.matrix_local
         if bone.parent:
-            loc_mat = bone.parent.matrix_local.inverted_safe() @ loc_mat
+            parent_mat = bone.parent.matrix_local
+        else:
+            parent_mat = Matrix.Identity(4)
 
-        last_trans = None
-        for time_id, trans in enumerate(transforms):
-            if last_trans is None or trans != last_trans:
-                kf_pos, kf_rot = trans.calc_kf(loc_mat)
+        last_basis_mat = None
+        for time_id, basis_mat in enumerate(basis_matrices):
+            is_uniq_kf = False
+            if basis_mat != last_basis_mat:
+                if time_id > 0 and time_id < len(basis_matrices) - 1:
+                    prev_basis_mat = basis_matrices[time_id - 1]
+                    next_basis_mat = basis_matrices[time_id + 1]
+                    is_uniq_kf = not is_matrix_interpolated(prev_basis_mat, basis_mat, next_basis_mat)
+                else:
+                    is_uniq_kf = True
+
+            if is_uniq_kf:
+                loc_mat = basis_to_local_matrix(basis_mat, rest_mat, parent_mat)
+                kf_pos, kf_rot = loc_mat.to_translation(), loc_mat.to_quaternion()
                 keyframes.append(AnmKeyframe(time_id, kf_pos, kf_rot))
-            last_trans = trans
+
+            last_basis_mat = basis_mat
             offsets[time_id].append(len(keyframes) - 1)
 
     context.scene.frame_set(old_frame)
