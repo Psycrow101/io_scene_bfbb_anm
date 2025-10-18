@@ -1,4 +1,5 @@
 import bpy
+from bpy_extras import anim_utils
 from collections import defaultdict
 from mathutils import Matrix
 from . anm import Anm, AnmKeyframe
@@ -26,7 +27,14 @@ def is_matrix_interpolated(prev_mat, curr_mat, next_mat):
 def get_action_range(arm_obj, act):
     frame_start, frame_end = None, None
 
-    for curve in act.fcurves:
+    if bpy.app.version < (4, 4, 0):
+        action_fcurves = act.fcurves
+    else:
+        slot = arm_obj.animation_data.action_slot
+        channelbag = anim_utils.action_get_channelbag_for_slot(act, slot)
+        action_fcurves = channelbag.fcurves
+
+    for curve in action_fcurves:
         if 'pose.bones' not in curve.data_path:
             continue
 

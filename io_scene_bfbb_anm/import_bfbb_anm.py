@@ -1,4 +1,5 @@
 import bpy
+from bpy_extras import anim_utils
 from mathutils import Matrix
 from os import path
 from . anm import Anm, InvalidAnmFormat
@@ -38,10 +39,24 @@ def create_action(arm_obj, anm, fps):
     curves_loc, curves_rot = [], []
     prev_rots = {}
 
+    if bpy.app.version < (4, 4, 0):
+        action_fcurves = act.fcurves
+        action_groups = act.groups
+
+    else:
+        slot = act.slots.new(id_type='OBJECT', name='ANM')
+
+        layer = act.layers.new('Layer')
+        strip = layer.strips.new(type='KEYFRAME')
+        channelbag = strip.channelbag(slot, ensure=True)
+
+        action_fcurves = channelbag.fcurves
+        action_groups = channelbag.groups
+
     for bone in arm_obj.data.bones:
-        g = act.groups.new(name=bone.name)
-        cl = [act.fcurves.new(data_path=(POSEDATA_PREFIX % bone.name) + 'location', index=i) for i in range(3)]
-        cr = [act.fcurves.new(data_path=(POSEDATA_PREFIX % bone.name) + 'rotation_quaternion', index=i) for i in range(4)]
+        g = action_groups.new(name=bone.name)
+        cl = [action_fcurves.new(data_path=(POSEDATA_PREFIX % bone.name) + 'location', index=i) for i in range(3)]
+        cr = [action_fcurves.new(data_path=(POSEDATA_PREFIX % bone.name) + 'rotation_quaternion', index=i) for i in range(4)]
 
         for c in cl + cr:
             c.group = g
@@ -127,8 +142,18 @@ def load(context, filepath, fps):
     act.name = path.basename(filepath)
     animation_data.action = act
 
+    if bpy.app.version < (4, 4, 0):
+        action_fcurves = act.fcurves
+
+    else:
+        slot = act.slots[-1]
+        animation_data.action_slot = slot
+
+        channelbag = anim_utils.action_get_channelbag_for_slot(act, slot)
+        action_fcurves = channelbag.fcurves
+
     max_frame = 0
-    for fcu in act.fcurves:
+    for fcu in action_fcurves:
         for kfp in fcu.keyframe_points:
             max_frame = max(max_frame, kfp.co[0])
 
